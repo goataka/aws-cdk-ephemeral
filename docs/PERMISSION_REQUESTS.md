@@ -39,8 +39,7 @@ permissions:
       - arn:aws:states:*:*:execution:eph-*/*
 
 justification: |
-  データ処理パイプラインでStep Functionsによる
-  オーケストレーションが必要です。
+  データ処理パイプラインでStep Functionsによるオーケストレーションが必要です。
 ```
 
 ### 2. リクエストの提出

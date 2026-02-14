@@ -9,7 +9,7 @@ npm install
 
 ## cdk.jsonの設定
 
-実際のARNに置き換えてください。
+CloudFormationスタックの出力値を使用してARNを設定してください。
 
 ## デプロイ
 
