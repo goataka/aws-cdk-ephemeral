@@ -1,46 +1,30 @@
-# Simple CDK App Example
+# シンプルなCDKアプリケーション例
 
-This example demonstrates how to use `aws-cdk-ephemeral` with a simple CDK application.
-
-## Setup
-
-1. Install dependencies:
+## セットアップ
 
 ```bash
 cd examples/simple-app
 npm install
 ```
 
-2. Configure cdk.json with your CloudFormation stack outputs:
+## cdk.jsonの設定
 
-```bash
-# Update cdk.json with your actual ARNs
-vim cdk.json
-```
+実際のARNに置き換えてください。
 
-3. Deploy the ephemeral environment:
+## デプロイ
 
 ```bash
 npx cdkeph deploy
 ```
 
-4. Destroy when done:
+## 削除
 
 ```bash
 npx cdkeph destroy
 ```
 
-## What This Example Does
+## 内容
 
-- Creates an S3 bucket with the environment name prefix
-- Uses the environment context from cdkeph
-- Demonstrates proper tagging for ephemeral resources
-- Shows how to structure a CDK app for ephemeral environments
-
-## Files
-
-- `bin/app.ts` - CDK app entry point
-- `lib/simple-stack.ts` - Stack definition
-- `cdk.json` - CDK configuration with ephemeral settings
-- `package.json` - Dependencies
-- `tsconfig.json` - TypeScript configuration
+- S3バケットを環境名プレフィックス付きで作成
+- 環境コンテキストを使用
+- 適切なタグ付け

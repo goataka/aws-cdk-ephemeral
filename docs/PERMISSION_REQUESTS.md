@@ -1,75 +1,34 @@
-# Permission Request Guide
+# 権限リクエストガイド
 
-このガイドでは、エージェントや開発者がCloudFormation経由で権限の増加をリクエストする方法を説明します。
+エージェントがCloudFormation経由で権限の増加をリクエストする方法
 
-This guide explains how agents and developers can request permission increases via CloudFormation.
+## 現在の権限
 
-## Overview
-
-The ephemeral environment system uses IAM Permission Boundaries to limit what can be done. If you need additional permissions, you must request them from administrators who can update the CloudFormation stack.
-
-## Current Limitations
-
-The permission boundary (`EphemeralPermissionBoundary`) currently allows:
-
-### ✅ Allowed Services
+### 許可されているサービス
 - EC2, S3, Lambda, DynamoDB, RDS
-- CloudFormation, CloudWatch, CloudWatch Logs
-- EventBridge, EventBridge Scheduler
-- SNS, SQS, API Gateway
-- ECS, ECR
-- Route53, ACM
-- Secrets Manager, Systems Manager
-- KMS
+- CloudFormation, CloudWatch, EventBridge
+- SNS, SQS, API Gateway, ECS, ECR
+- Route53, ACM, Secrets Manager, KMS
 
-### ✅ Allowed IAM Operations
-- Read operations: `Get*`, `List*`
-- Limited write operations for `eph-*` roles only
-- PassRole for ephemeral resources
+### 許可されているIAM操作
+- 読み取り操作: `Get*`, `List*`
+- `eph-*` リソースのみ作成・変更可能
 
-### ❌ Restricted Operations
-- Creating/modifying IAM users
-- Modifying this CloudFormation stack
-- Modifying permission boundaries
-- Creating roles without `eph-` prefix
-- Direct IAM policy modifications
+### 制限されている操作
+- IAMユーザー・ポリシーの作成・変更
+- CloudFormationスタック自体の変更
+- 権限境界の変更
+- `eph-*` プレフィックス以外のロール作成
 
-## Requesting Additional Permissions
+## 権限リクエスト手順
 
-If you need permissions that are not currently allowed, follow these steps:
-
-### Step 1: Identify Required Permissions
-
-Document exactly what permissions you need:
+### 1. 必要な権限の特定
 
 ```yaml
-# Example: Need to use Step Functions
-Required Service: AWS Step Functions
-Required Actions:
-  - states:CreateStateMachine
-  - states:DeleteStateMachine
-  - states:UpdateStateMachine
-  - states:StartExecution
-  - states:StopExecution
-  - states:DescribeStateMachine
-  - states:ListStateMachines
-
-Justification:
-  We need to deploy and test Step Functions workflows in ephemeral environments
-  for our new order processing system.
-
-Resources:
-  All Step Functions resources (arn:aws:states:*:ACCOUNT_ID:stateMachine:eph-*)
-```
-
-### Step 2: Create a Permission Request
-
-Create a file `permission-request.yaml` in your repository:
-
-```yaml
-requestedBy: agent-name or developer-name
+# permission-request.yaml
+requestedBy: エージェント名または開発者名
 requestDate: 2026-02-14
-purpose: Brief description of why these permissions are needed
+purpose: 権限が必要な理由
 
 permissions:
   - service: AWS Step Functions
@@ -78,230 +37,86 @@ permissions:
     resources:
       - arn:aws:states:*:*:stateMachine:eph-*
       - arn:aws:states:*:*:execution:eph-*/*
-    
-  - service: AWS Glue
-    actions:
-      - glue:CreateJob
-      - glue:DeleteJob
-      - glue:StartJobRun
-      - glue:GetJob
-    resources:
-      - arn:aws:glue:*:*:job/eph-*
 
 justification: |
-  We are building a data processing pipeline that requires:
-  1. Step Functions for orchestration
-  2. Glue jobs for ETL operations
-  
-  These permissions are scoped to only ephemeral resources (eph-* prefix)
-  to maintain security boundaries.
-
-alternatives_considered: |
-  - Using Lambda for ETL: Not suitable due to 15-minute timeout
-  - Using ECS for orchestration: More complex and costly for our use case
+  データ処理パイプラインでStep Functionsによる
+  オーケストレーションが必要です。
 ```
 
-### Step 3: Submit Request to Administrators
+### 2. リクエストの提出
 
-Send the permission request to your AWS administrators via:
+以下のいずれかの方法で提出：
+- GitHubイシュー作成
+- プルリクエスト
+- 管理者へ直接連絡
 
-1. **GitHub Issue**: Create an issue in your repository
-2. **Pull Request**: Submit a PR with the request file
-3. **Email/Slack**: Send to your DevOps/Platform team
-4. **Ticketing System**: Create a ticket in Jira/ServiceNow
+### 3. 管理者によるレビュー
 
-### Step 4: Administrator Reviews Request
+管理者は以下を確認：
+1. 権限の妥当性
+2. `eph-*` プレフィックスでのスコープ
+3. セキュリティ境界のバイパスがないこと
 
-Administrators will:
+### 4. CloudFormationスタックの更新
 
-1. Review the requested permissions
-2. Verify they are scoped appropriately (eph-* prefix)
-3. Ensure they don't bypass security boundaries
-4. Approve or request modifications
-
-### Step 5: CloudFormation Stack Update
-
-Once approved, administrators will update the CloudFormation stack:
+承認後、管理者がスタックを更新：
 
 ```bash
-# Download current template
-aws cloudformation get-template \
-  --stack-name EphemeralStack \
-  --query 'TemplateBody' \
-  --output text > current-template.yaml
-
-# Edit the EphemeralPermissionBoundary policy
-# Add new permissions under AllowMostServices statement
-
-# Update the stack
 aws cloudformation update-stack \
   --stack-name EphemeralStack \
-  --template-body file://updated-template.yaml \
+  --template-body file://cloudformation/oidc-roles.yaml \
   --capabilities CAPABILITY_NAMED_IAM
 
-# Wait for update to complete
 aws cloudformation wait stack-update-complete --stack-name EphemeralStack
 ```
 
-### Step 6: Verify New Permissions
-
-After the update:
+### 5. 新しい権限の確認
 
 ```bash
-# Test the new permissions
 cdkeph deploy
 ```
 
-## Example CloudFormation Update
-
-Here's an example of how administrators would add Step Functions permissions:
+## CloudFormation更新例
 
 ```yaml
-# In cloudformation/oidc-roles.yaml
-# Under EphemeralPermissionBoundary -> PolicyDocument -> Statement
+# cloudformation/oidc-roles.yaml
+# EphemeralPermissionBoundary -> PolicyDocument -> Statement に追加
 
-- Sid: AllowMostServices
-  Effect: Allow
-  Action:
-    # ... existing services ...
-    - 'states:*'  # Add Step Functions
-    - 'glue:*'    # Add Glue
-  Resource: '*'
-```
-
-For more granular control:
-
-```yaml
 - Sid: AllowStepFunctionsForEphemeral
   Effect: Allow
   Action:
-    - 'states:CreateStateMachine'
-    - 'states:DeleteStateMachine'
-    - 'states:UpdateStateMachine'
-    - 'states:StartExecution'
-    - 'states:StopExecution'
-    - 'states:DescribeStateMachine'
-    - 'states:ListStateMachines'
+    - states:*
   Resource:
     - !Sub 'arn:aws:states:*:${AWS::AccountId}:stateMachine:eph-*'
     - !Sub 'arn:aws:states:*:${AWS::AccountId}:execution:eph-*/*'
 ```
 
-## Security Considerations for Administrators
+## 拒否される例
 
-When reviewing permission requests, verify:
-
-1. **Least Privilege**: Only grant minimum required permissions
-2. **Resource Scoping**: Limit to `eph-*` resources when possible
-3. **No Boundary Bypass**: Ensure permissions don't allow modifying the boundary
-4. **No Stack Modification**: Prevent self-modification of the CloudFormation stack
-5. **Time-Limited**: Consider if permission should be temporary
-6. **Audit Trail**: Document who requested and why
-
-## Automatic Permission Requests (Future)
-
-### For Agents
-
-Agents could automatically generate permission requests:
-
-```typescript
-// Example: Agent-generated permission request
-const permissionRequest = {
-  requestedBy: 'ai-agent-v1',
-  task: 'Deploy machine learning pipeline',
-  detectedMissingPermissions: [
-    'sagemaker:CreateModel',
-    'sagemaker:CreateEndpoint'
-  ],
-  proposedScope: {
-    service: 'SageMaker',
-    actions: ['sagemaker:*'],
-    resources: ['arn:aws:sagemaker:*:*:*/eph-*']
-  },
-  autoGenerated: true,
-  requiresHumanApproval: true
-};
-```
-
-The agent would:
-1. Detect permission denied errors
-2. Generate permission request
-3. Create GitHub issue or PR
-4. Wait for human approval
-5. Retry deployment after approval
-
-## Common Permission Patterns
-
-### Pattern 1: New AWS Service
-
+### スコープが広すぎる
 ```yaml
-permissions:
-  - service: ServiceName
-    actions:
-      - service:*
-    resources:
-      - arn:aws:service:*:ACCOUNT:resource/eph-*
-```
-
-### Pattern 2: Cross-Service Integration
-
-```yaml
-permissions:
-  - service: Lambda
-    actions:
-      - lambda:InvokeFunction
-    resources:
-      - arn:aws:lambda:*:ACCOUNT:function:eph-*
-  
-  - service: EventBridge
-    actions:
-      - events:PutEvents
-    resources:
-      - arn:aws:events:*:ACCOUNT:event-bus/eph-*
-```
-
-### Pattern 3: Read-Only Access
-
-```yaml
-permissions:
-  - service: CloudTrail
-    actions:
-      - cloudtrail:LookupEvents
-      - cloudtrail:GetTrailStatus
-    resources:
-      - '*'
-```
-
-## Denied Request Examples
-
-These requests would typically be denied:
-
-### ❌ Too Broad Scope
-```yaml
-# BAD: No resource restrictions
+# 不可: すべてのS3バケットにアクセス
 permissions:
   - service: S3
     actions:
       - s3:*
     resources:
-      - '*'  # Allows access to ALL S3 buckets
+      - '*'
 ```
 
-### ❌ Boundary Bypass Attempt
+### 権限境界のバイパス
 ```yaml
-# BAD: Trying to modify IAM policies
+# 不可: IAMポリシーの変更
 permissions:
   - service: IAM
     actions:
       - iam:CreatePolicy
       - iam:AttachUserPolicy
-    resources:
-      - '*'
 ```
 
-### ❌ Stack Self-Modification
+### スタックの自己変更
 ```yaml
-# BAD: Attempting to modify the CloudFormation stack
+# 不可: CloudFormationスタックの変更
 permissions:
   - service: CloudFormation
     actions:
@@ -310,23 +125,13 @@ permissions:
       - arn:aws:cloudformation:*:*:stack/EphemeralStack/*
 ```
 
-## FAQ
+## よくある質問
 
-**Q: How long does approval take?**
-A: Typically 1-2 business days, depending on your organization's process.
+**Q: 承認にはどれくらいかかりますか？**
+A: 通常1-2営業日です。
 
-**Q: Can I bypass the permission boundary?**
-A: No, this is intentional. The boundary ensures security constraints.
+**Q: 権限境界をバイパスできますか？**
+A: いいえ、これは意図的なセキュリティ制約です。
 
-**Q: What if I need permissions urgently?**
-A: Contact your administrators directly and explain the urgency.
-
-**Q: Can agents automatically approve their own requests?**
-A: No, human approval is always required to maintain security.
-
-**Q: What happens to existing environments after permission update?**
-A: They automatically inherit the new permissions from the updated boundary.
-
-## Contact
-
-For questions about permissions, contact your AWS administrators or DevOps team.
+**Q: 既存の環境に影響はありますか？**
+A: 更新後、すべての環境が新しい権限を継承します。
