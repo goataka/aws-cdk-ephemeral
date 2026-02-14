@@ -69,8 +69,9 @@ name: Deploy Ephemeral
 
 on:
   push:
-    branches: ['**']
-    branches-ignore: ['main', 'master']
+    branches-ignore:
+      - main
+      - master
 
 permissions:
   id-token: write

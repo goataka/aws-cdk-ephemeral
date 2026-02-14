@@ -2,8 +2,9 @@ name: Deploy Ephemeral Environment
 
 on:
   push:
-    branches:
-      - '**'
+    branches-ignore:
+      - main
+      - master
   pull_request:
     branches:
       - main
@@ -15,8 +16,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Skip deployment on main/master branch
-    if: github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
