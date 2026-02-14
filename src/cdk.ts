@@ -1,5 +1,5 @@
 import { execa } from 'execa';
-import { loadConfig, getTTL, getRegion } from './config';
+import { loadConfig, getTTL, getRegion, getStackName, getRoleArns } from './config';
 import { getCurrentBranch, generateEnvName } from './utils';
 import { createDestructionSchedule, deleteDestructionSchedule } from './scheduler';
 
@@ -15,21 +15,29 @@ export interface DeployOptions {
  */
 export async function deploy(options: DeployOptions = {}): Promise<void> {
   const config = loadConfig();
-  const region = getRegion(config);
+  const region = getRegion();
   const ttl = getTTL(config);
+  const stackName = getStackName(config);
   
   // Get environment name
   let envName: string;
+  let branchName: string;
   if (options.env) {
     envName = options.env;
+    branchName = 'custom';
   } else {
-    const branch = await getCurrentBranch();
-    envName = generateEnvName(branch);
+    branchName = await getCurrentBranch();
+    envName = generateEnvName(branchName);
   }
   
+  console.log(`Branch: ${branchName}`);
   console.log(`Deploying to ephemeral environment: ${envName}`);
   console.log(`Region: ${region}`);
   console.log(`TTL: ${ttl} hours`);
+  
+  // Fetch role ARNs from CloudFormation
+  console.log(`Fetching role ARNs from CloudFormation stack: ${stackName}`);
+  const roleArns = await getRoleArns(stackName, region);
   
   // Build CDK command arguments
   const cdkArgs = ['deploy', '--all', '--require-approval', 'never'];
@@ -49,13 +57,13 @@ export async function deploy(options: DeployOptions = {}): Promise<void> {
     }
   }
   
-  // Add role ARNs if configured
-  if (config.ephemeral?.deploymentRoleArn) {
-    cdkArgs.push('--role-arn', config.ephemeral.deploymentRoleArn);
+  // Add role ARNs if available
+  if (roleArns.deploymentRoleArn) {
+    cdkArgs.push('--role-arn', roleArns.deploymentRoleArn);
   }
   
-  if (config.ephemeral?.cdkExecutionRoleArn) {
-    cdkArgs.push('--cloudformation-execution-policies', config.ephemeral.cdkExecutionRoleArn);
+  if (roleArns.cdkExecutionRoleArn) {
+    cdkArgs.push('--cloudformation-execution-policies', roleArns.cdkExecutionRoleArn);
   }
   
   // Add any additional arguments
@@ -76,16 +84,15 @@ export async function deploy(options: DeployOptions = {}): Promise<void> {
     
     console.log('\n✓ Deployment successful');
     
-    // Create cleanup schedule if scheduler role is configured
-    if (config.ephemeral?.schedulerRoleArn) {
-      const stackName = `${envName}-stack`; // You may need to adjust this based on your CDK app
-      await createDestructionSchedule(stackName, ttl, {
+    // Create cleanup schedule if scheduler role is available
+    if (roleArns.schedulerRoleArn) {
+      const cdkStackName = `${envName}-stack`;
+      await createDestructionSchedule(cdkStackName, ttl, {
         region,
-        schedulerRoleArn: config.ephemeral.schedulerRoleArn
+        schedulerRoleArn: roleArns.schedulerRoleArn
       });
     } else {
-      console.log('\nWarning: No schedulerRoleArn configured. Auto-cleanup schedule not created.');
-      console.log('Please configure ephemeral.schedulerRoleArn in cdk.json to enable auto-cleanup.');
+      console.log('\nWarning: No schedulerRoleArn found in CloudFormation outputs. Auto-cleanup schedule not created.');
     }
   } catch (error: any) {
     console.error('\n✗ Deployment failed:', error.message);
@@ -98,18 +105,26 @@ export async function deploy(options: DeployOptions = {}): Promise<void> {
  */
 export async function destroy(options: DeployOptions = {}): Promise<void> {
   const config = loadConfig();
-  const region = getRegion(config);
+  const region = getRegion();
+  const stackName = getStackName(config);
   
   // Get environment name
   let envName: string;
+  let branchName: string;
   if (options.env) {
     envName = options.env;
+    branchName = 'custom';
   } else {
-    const branch = await getCurrentBranch();
-    envName = generateEnvName(branch);
+    branchName = await getCurrentBranch();
+    envName = generateEnvName(branchName);
   }
   
+  console.log(`Branch: ${branchName}`);
   console.log(`Destroying ephemeral environment: ${envName}`);
+  
+  // Fetch role ARNs from CloudFormation
+  console.log(`Fetching role ARNs from CloudFormation stack: ${stackName}`);
+  const roleArns = await getRoleArns(stackName, region);
   
   // Build CDK command arguments
   const cdkArgs = ['destroy', '--all', '--force'];
@@ -122,9 +137,9 @@ export async function destroy(options: DeployOptions = {}): Promise<void> {
     cdkArgs.push('--profile', options.profile);
   }
   
-  // Add role ARN if configured
-  if (config.ephemeral?.deploymentRoleArn) {
-    cdkArgs.push('--role-arn', config.ephemeral.deploymentRoleArn);
+  // Add role ARN if available
+  if (roleArns.deploymentRoleArn) {
+    cdkArgs.push('--role-arn', roleArns.deploymentRoleArn);
   }
   
   try {
@@ -141,8 +156,8 @@ export async function destroy(options: DeployOptions = {}): Promise<void> {
     console.log('\n✓ Destruction successful');
     
     // Delete cleanup schedule
-    const stackName = `${envName}-stack`;
-    await deleteDestructionSchedule(stackName, region);
+    const cdkStackName = `${envName}-stack`;
+    await deleteDestructionSchedule(cdkStackName, region);
   } catch (error: any) {
     console.error('\n✗ Destruction failed:', error.message);
     throw error;

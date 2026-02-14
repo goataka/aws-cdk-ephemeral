@@ -3,18 +3,20 @@ name: Deploy Ephemeral Environment
 on:
   push:
     branches:
-      - '**'  # Run on all branches
+      - '**'
   pull_request:
     branches:
       - main
 
 permissions:
-  id-token: write   # Required for OIDC
+  id-token: write
   contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Skip deployment on main/master branch
+    if: github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,20 +30,16 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
+          aws-region: ap-northeast-1
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Install cdkeph
-        run: npm install -g aws-cdk-ephemeral
+      - name: Install cdkeph and aws-cdk
+        run: npm install -g aws-cdk aws-cdk-ephemeral
 
       - name: Deploy ephemeral environment
         run: cdkeph deploy
-
-      # Optional: Run tests against the deployed environment
-      # - name: Run integration tests
-      #   run: npm test
 
   destroy-on-merge:
     runs-on: ubuntu-latest
@@ -59,10 +57,10 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
+          aws-region: ap-northeast-1
 
       - name: Install cdkeph
-        run: npm install -g aws-cdk-ephemeral
+        run: npm install -g aws-cdk aws-cdk-ephemeral
 
       - name: Destroy ephemeral environment
         run: cdkeph destroy

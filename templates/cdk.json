@@ -56,10 +56,6 @@
   },
   "ephemeral": {
     "ttlHours": 24,
-    "defaultRegion": "us-east-1",
-    "permissionBoundaryArn": "arn:aws:iam::123456789012:policy/EphemeralStack-EphemeralBoundary",
-    "cdkExecutionRoleArn": "arn:aws:iam::123456789012:role/EphemeralStack-CDKExecRole",
-    "deploymentRoleArn": "arn:aws:iam::123456789012:role/EphemeralStack-GitHubDeploy",
-    "schedulerRoleArn": "arn:aws:iam::123456789012:role/EphemeralStack-SchedulerExec"
+    "stackName": "EphemeralStack"
   }
 }

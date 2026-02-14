@@ -1,59 +1,51 @@
-import { sanitizeBranchName, generateEnvName } from '../src/utils';
+import { generateHash, generateEnvName } from '../src/utils';
 
-describe('Branch Name Sanitization', () => {
-  test('sanitizes branch with slashes', () => {
-    expect(sanitizeBranchName('feature/user-auth')).toBe('feature-user-auth');
+describe('Hash Generation', () => {
+  test('generates 7-digit hash from string', () => {
+    const hash = generateHash('feature/user-auth');
+    expect(hash).toHaveLength(7);
+    expect(hash).toMatch(/^[a-f0-9]{7}$/);
   });
 
-  test('sanitizes branch with special characters', () => {
-    expect(sanitizeBranchName('bugfix/fix-#123')).toBe('bugfix-fix-123');
+  test('generates consistent hash for same input', () => {
+    const hash1 = generateHash('feature/user-auth');
+    const hash2 = generateHash('feature/user-auth');
+    expect(hash1).toBe(hash2);
   });
 
-  test('sanitizes branch with underscores', () => {
-    expect(sanitizeBranchName('dev/test_feature')).toBe('dev-test-feature');
-  });
-
-  test('sanitizes branch with dots', () => {
-    expect(sanitizeBranchName('release/v1.0.0')).toBe('release-v1-0-0');
-  });
-
-  test('converts to lowercase', () => {
-    expect(sanitizeBranchName('Feature/UserAuth')).toBe('feature-userauth');
-  });
-
-  test('removes leading hyphens', () => {
-    expect(sanitizeBranchName('-feature-branch')).toBe('feature-branch');
-  });
-
-  test('removes trailing hyphens', () => {
-    expect(sanitizeBranchName('feature-branch-')).toBe('feature-branch');
-  });
-
-  test('collapses multiple hyphens', () => {
-    expect(sanitizeBranchName('feature--user---auth')).toBe('feature-user-auth');
-  });
-
-  test('handles main branch', () => {
-    expect(sanitizeBranchName('main')).toBe('main');
-  });
-
-  test('handles very long branch names', () => {
-    const longBranch = 'a'.repeat(100);
-    const sanitized = sanitizeBranchName(longBranch);
-    expect(sanitized.length).toBeLessThanOrEqual(50);
+  test('generates different hashes for different inputs', () => {
+    const hash1 = generateHash('feature/user-auth');
+    const hash2 = generateHash('feature/payment');
+    expect(hash1).not.toBe(hash2);
   });
 });
 
 describe('Environment Name Generation', () => {
-  test('generates env name with eph prefix', () => {
-    expect(generateEnvName('feature/user-auth')).toBe('eph-feature-user-auth');
+  test('generates env name with eph prefix and hash', () => {
+    const envName = generateEnvName('feature/user-auth');
+    expect(envName).toMatch(/^eph-[a-f0-9]{7}$/);
   });
 
-  test('generates env name for main branch', () => {
-    expect(generateEnvName('main')).toBe('eph-main');
+  test('generates consistent env name for same branch', () => {
+    const envName1 = generateEnvName('feature/user-auth');
+    const envName2 = generateEnvName('feature/user-auth');
+    expect(envName1).toBe(envName2);
   });
 
-  test('generates env name for complex branch', () => {
-    expect(generateEnvName('bugfix/issue-#456_test')).toBe('eph-bugfix-issue-456-test');
+  test('generates different env names for different branches', () => {
+    const envName1 = generateEnvName('feature/user-auth');
+    const envName2 = generateEnvName('feature/payment');
+    expect(envName1).not.toBe(envName2);
+  });
+
+  test('handles special characters in branch names', () => {
+    const envName = generateEnvName('bugfix/fix-#123_test');
+    expect(envName).toMatch(/^eph-[a-f0-9]{7}$/);
+  });
+
+  test('env name is always short regardless of branch length', () => {
+    const longBranch = 'a'.repeat(100);
+    const envName = generateEnvName(longBranch);
+    expect(envName.length).toBe(11); // 'eph-' + 7 chars
   });
 });
