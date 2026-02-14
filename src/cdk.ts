@@ -55,7 +55,7 @@ export async function deploy(options: DeployOptions = {}): Promise<void> {
   }
   
   if (config.ephemeral?.cdkExecutionRoleArn) {
-    cdkArgs.push('--execute', '--cloudformation-execution-policies', config.ephemeral.cdkExecutionRoleArn);
+    cdkArgs.push('--cloudformation-execution-policies', config.ephemeral.cdkExecutionRoleArn);
   }
   
   // Add any additional arguments
