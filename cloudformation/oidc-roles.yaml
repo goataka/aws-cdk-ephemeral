@@ -1,0 +1,298 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM roles and OIDC provider for ephemeral CDK environments with GitHub Actions'
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: GitHub organization or username
+  
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository name
+  
+  OIDCProviderArn:
+    Type: String
+    Description: ARN of the GitHub OIDC provider (leave empty to create new)
+    Default: ''
+  
+  MaxSessionDuration:
+    Type: Number
+    Description: Maximum session duration in seconds
+    Default: 3600
+    MinValue: 3600
+    MaxValue: 43200
+
+Conditions:
+  CreateOIDCProvider: !Equals [!Ref OIDCProviderArn, '']
+
+Resources:
+  # GitHub OIDC Provider
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  # Permission Boundary - Restricts what the CDK execution role can do
+  EphemeralPermissionBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${AWS::StackName}-EphemeralBoundary'
+      Description: Permission boundary for ephemeral CDK environments
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow most AWS services but prevent IAM modifications
+          - Sid: AllowMostServices
+            Effect: Allow
+            Action:
+              - 'ec2:*'
+              - 's3:*'
+              - 'lambda:*'
+              - 'dynamodb:*'
+              - 'rds:*'
+              - 'cloudformation:*'
+              - 'logs:*'
+              - 'cloudwatch:*'
+              - 'events:*'
+              - 'scheduler:*'
+              - 'sns:*'
+              - 'sqs:*'
+              - 'apigateway:*'
+              - 'execute-api:*'
+              - 'elasticloadbalancing:*'
+              - 'ecs:*'
+              - 'ecr:*'
+              - 'route53:*'
+              - 'acm:*'
+              - 'secretsmanager:*'
+              - 'ssm:*'
+              - 'kms:*'
+            Resource: '*'
+          
+          # Allow reading IAM but not modification
+          - Sid: AllowIAMRead
+            Effect: Allow
+            Action:
+              - 'iam:Get*'
+              - 'iam:List*'
+            Resource: '*'
+          
+          # Allow limited IAM role/policy operations only for ephemeral resources
+          - Sid: AllowIAMForEphemeral
+            Effect: Allow
+            Action:
+              - 'iam:CreateRole'
+              - 'iam:DeleteRole'
+              - 'iam:AttachRolePolicy'
+              - 'iam:DetachRolePolicy'
+              - 'iam:PutRolePolicy'
+              - 'iam:DeleteRolePolicy'
+              - 'iam:UpdateAssumeRolePolicy'
+              - 'iam:TagRole'
+              - 'iam:UntagRole'
+              - 'iam:PassRole'
+            Resource:
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/eph-*'
+          
+          # Explicitly deny modification of this CloudFormation stack
+          - Sid: DenyStackModification
+            Effect: Deny
+            Action:
+              - 'cloudformation:UpdateStack'
+              - 'cloudformation:DeleteStack'
+            Resource: !Sub 'arn:aws:cloudformation:*:${AWS::AccountId}:stack/${AWS::StackName}/*'
+          
+          # Deny modification of permission boundaries
+          - Sid: DenyBoundaryModification
+            Effect: Deny
+            Action:
+              - 'iam:DeletePolicyVersion'
+              - 'iam:DeletePolicy'
+              - 'iam:CreatePolicyVersion'
+              - 'iam:SetDefaultPolicyVersion'
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:policy/${AWS::StackName}-*'
+
+  # CDK Execution Role - Used by CloudFormation to deploy resources
+  CDKExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-CDKExecRole'
+      Description: Role used by CloudFormation to deploy CDK resources
+      PermissionsBoundary: !Ref EphemeralPermissionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/PowerUserAccess'
+      Policies:
+        - PolicyName: CDKExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allow IAM operations within boundary
+              - Effect: Allow
+                Action:
+                  - 'iam:CreateRole'
+                  - 'iam:DeleteRole'
+                  - 'iam:AttachRolePolicy'
+                  - 'iam:DetachRolePolicy'
+                  - 'iam:PutRolePolicy'
+                  - 'iam:DeleteRolePolicy'
+                  - 'iam:GetRole'
+                  - 'iam:GetRolePolicy'
+                  - 'iam:PassRole'
+                  - 'iam:TagRole'
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/eph-*'
+              
+              # Require permission boundary on role creation
+              - Effect: Allow
+                Action:
+                  - 'iam:CreateRole'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'iam:PermissionsBoundary': !Ref EphemeralPermissionBoundary
+
+  # GitHub Actions Deployment Role - Used by GitHub Actions to deploy
+  GitHubActionsDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-GitHubDeploy'
+      Description: Role for GitHub Actions to deploy ephemeral environments
+      MaxSessionDuration: !Ref MaxSessionDuration
+      PermissionsBoundary: !Ref EphemeralPermissionBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOIDCProvider
+                - !GetAtt GitHubOIDCProvider.Arn
+                - !Ref OIDCProviderArn
+            Action: 'sts:AssumeRoleWithWebIdentity'
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com'
+              StringLike:
+                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubOrg}/${GitHubRepo}:*'
+      Policies:
+        - PolicyName: CDKDeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allow CDK operations
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:*'
+                  - 'sts:AssumeRole'
+                Resource: '*'
+              
+              # Allow assuming CDK execution role
+              - Effect: Allow
+                Action:
+                  - 'iam:PassRole'
+                Resource: !GetAtt CDKExecutionRole.Arn
+              
+              # Allow S3 operations for CDK assets
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource:
+                  - 'arn:aws:s3:::cdk-*'
+                  - 'arn:aws:s3:::cdk-*/*'
+              
+              # Allow ECR operations for CDK assets
+              - Effect: Allow
+                Action:
+                  - 'ecr:*'
+                Resource: '*'
+              
+              # Allow SSM for CDK context
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                Resource: !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/cdk-bootstrap/*'
+              
+              # EventBridge Scheduler for auto-cleanup
+              - Effect: Allow
+                Action:
+                  - 'scheduler:CreateSchedule'
+                  - 'scheduler:DeleteSchedule'
+                  - 'scheduler:GetSchedule'
+                  - 'scheduler:UpdateSchedule'
+                Resource: !Sub 'arn:aws:scheduler:*:${AWS::AccountId}:schedule/default/eph-*'
+              
+              - Effect: Allow
+                Action:
+                  - 'iam:PassRole'
+                Resource: !GetAtt SchedulerExecutionRole.Arn
+
+  # Scheduler Execution Role - Used by EventBridge Scheduler to delete stacks
+  SchedulerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-SchedulerExec'
+      Description: Role for EventBridge Scheduler to delete ephemeral stacks
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: SchedulerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:DeleteStack'
+                  - 'cloudformation:DescribeStacks'
+                Resource: !Sub 'arn:aws:cloudformation:*:${AWS::AccountId}:stack/eph-*/*'
+
+Outputs:
+  OIDCProviderArn:
+    Description: ARN of the GitHub OIDC Provider
+    Value: !If
+      - CreateOIDCProvider
+      - !GetAtt GitHubOIDCProvider.Arn
+      - !Ref OIDCProviderArn
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProviderArn'
+  
+  GitHubActionsRoleArn:
+    Description: ARN of the GitHub Actions deployment role
+    Value: !GetAtt GitHubActionsDeploymentRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-GitHubActionsRoleArn'
+  
+  CDKExecutionRoleArn:
+    Description: ARN of the CDK execution role
+    Value: !GetAtt CDKExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CDKExecutionRoleArn'
+  
+  SchedulerRoleArn:
+    Description: ARN of the EventBridge Scheduler execution role
+    Value: !GetAtt SchedulerExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SchedulerRoleArn'
+  
+  PermissionBoundaryArn:
+    Description: ARN of the permission boundary policy
+    Value: !Ref EphemeralPermissionBoundary
+    Export:
+      Name: !Sub '${AWS::StackName}-PermissionBoundaryArn'
