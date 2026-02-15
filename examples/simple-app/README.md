@@ -4,7 +4,7 @@
 
 ```bash
 cd examples/simple-app
-npm install
+npm ci
 ```
 
 ## cdk.jsonの設定

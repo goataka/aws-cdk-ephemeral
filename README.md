@@ -4,7 +4,7 @@
 
 ## 機能
 
-- ブランチ名から7桁ハッシュを生成し、環境名として使用（例: `feature/auth` → `eph-a1b2c3d`）
+- ブランチ名から7桁ハッシュを生成し、環境名として使用
 - OIDCによる認証（GitHub Actions対応）
 - IAM権限境界による制限
 - 自動削除（デフォルト24時間）
@@ -16,9 +16,9 @@
 npm install -g aws-cdk aws-cdk-ephemeral
 ```
 
-## セットアップ
+## 必須セットアップ
 
-### 1. CloudFormationスタックのデプロイ
+### CloudFormationスタックのデプロイ
 
 ```bash
 aws cloudformation create-stack \
@@ -29,12 +29,9 @@ aws cloudformation create-stack \
     ParameterKey=GitHubRepo,ParameterValue=your-repo \
   --capabilities CAPABILITY_NAMED_IAM \
   --region ap-northeast-1
-
-aws cloudformation wait stack-create-complete --stack-name EphemeralStack --region ap-northeast-1
-aws cloudformation describe-stacks --stack-name EphemeralStack --region ap-northeast-1 --query 'Stacks[0].Outputs'
 ```
 
-### 2. cdk.jsonの設定
+### cdk.jsonの設定
 
 ```json
 {
@@ -46,12 +43,9 @@ aws cloudformation describe-stacks --stack-name EphemeralStack --region ap-north
 }
 ```
 
-**注意**: ロールARNは自動的にCloudFormationスタックから取得されます。
-
-### 3. CDKアプリケーションの設定
+### CDKアプリケーションの設定
 
 ```typescript
-// bin/app.ts
 const app = new cdk.App();
 const envName = app.node.tryGetContext('env') || 'dev';
 
@@ -61,62 +55,33 @@ new MyStack(app, `${envName}-Stack`, {
 });
 ```
 
-### 4. GitHub Actions設定（オプション）
+## オプション設定
 
-```yaml
-# .github/workflows/ephemeral-deploy.yml
-name: Deploy Ephemeral
+### 環境名のカスタマイズ
 
-on:
-  push:
-    branches-ignore:
-      - main
-      - master
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ap-northeast-1
-      - run: npm ci
-      - run: npm install -g aws-cdk aws-cdk-ephemeral
-      - run: cdkeph deploy
+```json
+{
+  "ephemeral": {
+    "envPrefix": "dev",
+    "envHash": "custom7"
+  }
+}
 ```
+
+- `envPrefix`: 環境名のプリフィックス（デフォルト: `eph`）
+- `envHash`: 固定ハッシュ値（未指定時はブランチ名から自動生成）
+
+### GitHub Actions
+
+詳細は[SETUP.md](docs/SETUP.md)を参照
 
 ## 使い方
 
 ```bash
-# デプロイ（フィーチャーブランチから）
-cdkeph deploy
-
-# 環境情報表示
-cdkeph info
-
-# 削除
-cdkeph destroy
+cdkeph deploy   # デプロイ
+cdkeph info     # 環境情報表示
+cdkeph destroy  # 削除
 ```
-
-## 設定
-
-### cdk.json
-
-| フィールド | 型 | デフォルト | 説明 |
-|-----------|------|---------|------|
-| ttlHours | number | 24 | 自動削除までの時間 |
-| stackName | string | EphemeralStack | CloudFormationスタック名 |
-
-リージョンは`AWS_REGION`環境変数から取得。未設定の場合は`ap-northeast-1`がデフォルト。
 
 ## セキュリティ
 
@@ -125,6 +90,8 @@ cdkeph destroy
 - `eph-*`リソースのみ操作可能
 - CloudFormationスタック自体の変更不可
 - main/masterブランチからのデプロイ不可
+
+詳細は[SECURITY.md](docs/SECURITY.md)を参照
 
 ## ライセンス
 

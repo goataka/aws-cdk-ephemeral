@@ -4,6 +4,8 @@ import * as path from 'path';
 export interface EphemeralConfig {
   ttlHours?: number;
   stackName?: string;
+  envHash?: string;
+  envPrefix?: string;
 }
 
 export interface CdkJsonConfig {

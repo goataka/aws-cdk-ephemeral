@@ -27,7 +27,9 @@ export async function deploy(options: DeployOptions = {}): Promise<void> {
     branchName = 'custom';
   } else {
     branchName = await getCurrentBranch();
-    envName = generateEnvName(branchName);
+    const prefix = config.ephemeral?.envPrefix || 'eph';
+    const customHash = config.ephemeral?.envHash;
+    envName = generateEnvName(branchName, prefix, customHash);
   }
   
   console.log(`Branch: ${branchName}`);
@@ -116,7 +118,9 @@ export async function destroy(options: DeployOptions = {}): Promise<void> {
     branchName = 'custom';
   } else {
     branchName = await getCurrentBranch();
-    envName = generateEnvName(branchName);
+    const prefix = config.ephemeral?.envPrefix || 'eph';
+    const customHash = config.ephemeral?.envHash;
+    envName = generateEnvName(branchName, prefix, customHash);
   }
   
   console.log(`Branch: ${branchName}`);
